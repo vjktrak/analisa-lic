@@ -6,14 +6,14 @@ export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json()
 
-    const adminEmail = process.env.ADMIN_EMAIL
-    const adminPasswordHash = process.env.ADMIN_PASSWORD
+    const adminEmail = (process.env.ADMIN_EMAIL || '').trim()
+    const adminPasswordHash = (process.env.ADMIN_PASSWORD || '').trim()
 
     if (!adminEmail || !adminPasswordHash) {
       return NextResponse.json({ error: 'Servidor não configurado' }, { status: 500 })
     }
 
-    if (email !== adminEmail) {
+    if (email.trim() !== adminEmail) {
       return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 })
     }
 
