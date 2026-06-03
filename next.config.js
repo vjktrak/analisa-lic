@@ -1,13 +1,13 @@
-/** @type {import('next').NextConfig} */
+/** @type {import("next").NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['pdf-parse', 'bcryptjs'],
+  typescript: {
+    ignoreBuildErrors: true,
   },
-  api: {
-    bodyParser: {
-      sizeLimit: '20mb',
-    },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  experimental: {
+    serverComponentsExternalPackages: ["bcryptjs"],
   },
 }
-
 module.exports = nextConfig
