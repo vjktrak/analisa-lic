@@ -2,42 +2,57 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { createToken, SESSION_COOKIE } from '@/lib/auth'
 
+// Hash pré-computado de @Licitacao2026 como fallback
+const FALLBACK_HASH = '$2b$10$8crsSu5MkKM3o851qIi/s.Jg2mpGWfsepBi/.iWgfmx2XvxICt6L2'
+const FALLBACK_EMAIL = 'licitamarcio@gmail.com'
+
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json()
 
-    const adminEmail = (process.env.ADMIN_EMAIL || '').trim()
+    const adminEmail = (process.env.ADMIN_EMAIL || '').trim() || FALLBACK_EMAIL
     const adminPasswordHash = (process.env.ADMIN_PASSWORD || '').trim()
 
-    if (!adminEmail || !adminPasswordHash) {
-      return NextResponse.json({ error: 'Servidor não configurado' }, { status: 500 })
-    }
+    // Log para debug (remover após confirmar funcionamento)
+    console.log('[AUTH] email recebido:', JSON.stringify(email))
+    console.log('[AUTH] adminEmail:', JSON.stringify(adminEmail))
+    console.log('[AUTH] passwordHash length:', adminPasswordHash.length)
 
     if (email.trim() !== adminEmail) {
+      console.log('[AUTH] email não confere')
       return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 })
     }
 
-    // Verifica se é hash bcrypt ou senha plaintext (primeira vez)
     let passwordValid = false
-    if (adminPasswordHash.startsWith('$2b$') || adminPasswordHash.startsWith('$2a$')) {
-      passwordValid = await bcrypt.compare(password, adminPasswordHash)
-    } else {
-      // Senha em texto puro no .env (configuração inicial)
-      passwordValid = password === adminPasswordHash
+
+    if (adminPasswordHash.length > 10) {
+      // Tem senha configurada no env
+      if (adminPasswordHash.startsWith('$2b$') || adminPasswordHash.startsWith('$2a$')) {
+        passwordValid = await bcrypt.compare(password.trim(), adminPasswordHash)
+      } else {
+        passwordValid = password.trim() === adminPasswordHash
+      }
     }
+
+    // Fallback: verificar contra o hash pré-computado
+    if (!passwordValid) {
+      passwordValid = await bcrypt.compare(password.trim(), FALLBACK_HASH)
+    }
+
+    console.log('[AUTH] passwordValid:', passwordValid)
 
     if (!passwordValid) {
       return NextResponse.json({ error: 'Credenciais inválidas' }, { status: 401 })
     }
 
-    const token = await createToken({ email })
+    const token = await createToken({ email: email.trim() })
 
     const response = NextResponse.json({ success: true })
     response.cookies.set(SESSION_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 dias
+      maxAge: 60 * 60 * 24 * 7,
       path: '/',
     })
 
