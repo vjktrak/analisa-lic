@@ -4,11 +4,9 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { buildAnalysisPrompt } from '@/lib/prompt'
 import Anthropic from '@anthropic-ai/sdk'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-export const maxDuration = 55 // Vercel Hobby: máx 60s
+export const maxDuration = 55 // Vercel Hobby: máximo 60s
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -25,23 +23,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'edital_id e texto_edital são obrigatórios' }, { status: 400 })
     }
 
-    // Limitar texto para evitar timeout no plano Hobby (60s)
-    // 40.000 chars ≈ 10.000 tokens — suficiente para análise completa
+    // Limitar texto — 40k chars é suficiente para análise completa e evita timeout
     const MAX_CHARS = 40000
     if (textoEdital.length > MAX_CHARS) {
       textoEdital = textoEdital.slice(0, MAX_CHARS) +
-        '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 40.000 caracteres do edital]'
+        '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 40.000 caracteres]'
     }
 
     // Marcar como "analisando"
-    await supabaseAdmin
-      .from('editais')
-      .update({ status: 'analisando' })
-      .eq('id', editalId)
+    await supabaseAdmin.from('editais').update({ status: 'analisando' }).eq('id', editalId)
 
-    // Chamar a API do Claude — Haiku é 50x mais rápido que Sonnet
     const prompt = buildAnalysisPrompt(textoEdital)
 
+    // claude-haiku: ~10x mais rápido que sonnet, cabe no limite de 60s do Hobby
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 4000,
@@ -49,11 +43,8 @@ export async function POST(req: NextRequest) {
     })
 
     const rawContent = message.content[0]
-    if (rawContent.type !== 'text') {
-      throw new Error('Resposta inesperada do Claude')
-    }
+    if (rawContent.type !== 'text') throw new Error('Resposta inesperada do Claude')
 
-    // Parse do JSON retornado
     let analise
     try {
       const cleanText = rawContent.text
@@ -64,15 +55,13 @@ export async function POST(req: NextRequest) {
       analise = JSON.parse(cleanText)
     } catch (parseErr) {
       console.error('[ANALYZE] JSON parse error:', parseErr)
-      console.error('[ANALYZE] Raw response:', rawContent.text.slice(0, 500))
+      console.error('[ANALYZE] Raw (500 chars):', rawContent.text.slice(0, 500))
       throw new Error('Erro ao processar resposta da IA. Tente novamente.')
     }
 
-    // Extrair campos principais do resultado
     const dadosGerais = analise.dados_gerais || {}
     const recomendado = analise.resumo_executivo?.recomendado ?? null
 
-    // Salvar no banco
     const { data, error } = await supabaseAdmin
       .from('editais')
       .update({
@@ -93,7 +82,6 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error('[ANALYZE] Error:', err)
-
     if (editalId) {
       await supabaseAdmin
         .from('editais')
@@ -101,7 +89,6 @@ export async function POST(req: NextRequest) {
         .eq('id', editalId)
         .catch(() => {})
     }
-
     const message = err instanceof Error ? err.message : 'Erro interno na análise'
     return NextResponse.json({ error: message }, { status: 500 })
   }
