@@ -241,25 +241,8 @@ function NewEditalModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!f) return
     if (f.size > 20 * 1024 * 1024) { setError('Arquivo muito grande (máx 20MB)'); return }
     setFile(f)
+    setFileText('') // resetar texto anterior
     setError('')
-    // Lê o arquivo como texto se for PDF ou TXT
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const result = ev.target?.result as string
-      // Para PDF binário, extraímos o texto legível
-      if (f.type === 'application/pdf') {
-        // Extração básica de texto de PDF (fallback - o ideal é usar pdf-parse no backend)
-        const text = result.replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim()
-        setFileText(text.slice(0, 100000))
-      } else {
-        setFileText(result.slice(0, 100000))
-      }
-    }
-    if (f.type === 'application/pdf') {
-      reader.readAsBinaryString(f)
-    } else {
-      reader.readAsText(f, 'UTF-8')
-    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -267,13 +250,34 @@ function NewEditalModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!form.numero_pregao || !form.orgao || !form.objeto) {
       setError('Preencha os campos obrigatórios (*)'); return
     }
-    setStep('saving')
     setError('')
+
+    let textoExtraido = fileText
+
+    // Se tem arquivo e ainda não extraímos o texto, extrair via backend
+    if (file && !textoExtraido) {
+      setStep('uploading')
+      try {
+        const fd = new FormData()
+        fd.append('file', file)
+        const extRes = await fetch('/api/extract-text', { method: 'POST', body: fd })
+        const extJson = await extRes.json()
+        if (!extRes.ok) throw new Error(extJson.error || 'Erro ao extrair texto')
+        textoExtraido = extJson.text || ''
+        setFileText(textoExtraido)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erro ao processar arquivo')
+        setStep('form')
+        return
+      }
+    }
+
+    setStep('saving')
     try {
       const res = await fetch('/api/editais', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, arquivo_nome: file?.name || null, arquivo_texto: fileText || null }),
+        body: JSON.stringify({ ...form, arquivo_nome: file?.name || null, arquivo_texto: textoExtraido || null }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Erro ao criar')
@@ -367,7 +371,11 @@ function NewEditalModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
             <button type="submit" disabled={step !== 'form'} className="btn-primary flex-1">
-              {step === 'saving' ? (
+              {step === 'uploading' ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="spinner w-4 h-4 inline-block" /> Extraindo texto…
+                </span>
+              ) : step === 'saving' ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="spinner w-4 h-4 inline-block" /> Salvando…
                 </span>
