@@ -8,7 +8,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
-export const maxDuration = 120 // 2 minutos (Vercel Pro) — free: 60s
+export const maxDuration = 55 // Vercel Hobby: máx 60s
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -19,10 +19,18 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     editalId = body.edital_id
-    const textoEdital: string = body.texto_edital
+    let textoEdital: string = body.texto_edital || ''
 
     if (!editalId || !textoEdital) {
       return NextResponse.json({ error: 'edital_id e texto_edital são obrigatórios' }, { status: 400 })
+    }
+
+    // Limitar texto para evitar timeout no plano Hobby (60s)
+    // 40.000 chars ≈ 10.000 tokens — suficiente para análise completa
+    const MAX_CHARS = 40000
+    if (textoEdital.length > MAX_CHARS) {
+      textoEdital = textoEdital.slice(0, MAX_CHARS) +
+        '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 40.000 caracteres do edital]'
     }
 
     // Marcar como "analisando"
@@ -31,12 +39,12 @@ export async function POST(req: NextRequest) {
       .update({ status: 'analisando' })
       .eq('id', editalId)
 
-    // Chamar a API do Claude
+    // Chamar a API do Claude — Haiku é 50x mais rápido que Sonnet
     const prompt = buildAnalysisPrompt(textoEdital)
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -48,7 +56,6 @@ export async function POST(req: NextRequest) {
     // Parse do JSON retornado
     let analise
     try {
-      // Remove possíveis backticks se o modelo incluir
       const cleanText = rawContent.text
         .replace(/^```json\s*/i, '')
         .replace(/^```\s*/i, '')
@@ -72,7 +79,6 @@ export async function POST(req: NextRequest) {
         status: 'concluido',
         recomendado,
         analise_raw: analise,
-        // Atualizar campos se vieram da análise
         numero_processo: dadosGerais.numero_processo || undefined,
         valor_estimado: dadosGerais.valor_estimado_global || undefined,
         data_sessao: dadosGerais.data_sessao || undefined,
@@ -88,7 +94,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[ANALYZE] Error:', err)
 
-    // Marcar como erro se temos o ID
     if (editalId) {
       await supabaseAdmin
         .from('editais')
