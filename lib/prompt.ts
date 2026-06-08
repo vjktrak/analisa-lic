@@ -1,14 +1,17 @@
 export function buildAnalysisPrompt(editalText: string): string {
-  return `Você é um especialista em licitações públicas brasileiras com profundo conhecimento da Lei nº 14.133/2021, jurisprudência do TCU e práticas de mercado.
+  // Limitar a 10k chars — o Haiku processa em ~25s com esse tamanho
+  const texto = editalText.slice(0, 10000)
 
-Analise o edital abaixo e retorne EXCLUSIVAMENTE um JSON válido (sem markdown, sem texto antes ou depois) com a estrutura exata especificada.
+  return `Você é especialista em licitações públicas brasileiras (Lei 14.133/2021).
 
-TEXTO DO EDITAL:
+Analise o edital abaixo e retorne SOMENTE um JSON válido, sem markdown, sem texto extra.
+
+EDITAL:
 ===
-${editalText.slice(0, 60000)}
+${texto}
 ===
 
-Retorne o JSON com esta estrutura exata:
+JSON obrigatório (preencha todos os campos com base no edital):
 
 {
   "dados_gerais": {
@@ -16,121 +19,52 @@ Retorne o JSON com esta estrutura exata:
     "numero_pregao": "",
     "orgao_licitante": "",
     "modalidade": "",
-    "criterio_julgamento": "",
-    "modo_disputa": "",
     "objeto": "",
     "valor_estimado_global": "",
-    "valor_referencial_unitario": "",
-    "limite_exequibilidade": "",
-    "prazo_contratual": "",
-    "vigencia_prorrogacao": "",
     "data_sessao": "",
     "prazo_envio_propostas": "",
     "plataforma": "",
-    "validade_proposta": "",
-    "visita_tecnica": "",
-    "amostras": "",
-    "garantia_proposta": "",
-    "garantia_contratual": "",
-    "subcontratacao": "",
-    "beneficios_me_epp": "",
-    "regime_execucao": "",
+    "criterio_julgamento": "",
+    "modo_disputa": "",
+    "prazo_contratual": "",
     "pagamento": "",
-    "criterio_aceitabilidade": "",
-    "anexos": ""
+    "garantia_contratual": "",
+    "beneficios_me_epp": "",
+    "visita_tecnica": ""
   },
   "habilitacao": [
-    {
-      "categoria": "Habilitação Jurídica|Regularidade Fiscal|Regularidade Trabalhista|Qualificação Econômico-Financeira|Qualificação Técnica|Declarações",
-      "documento": "nome do documento",
-      "descricao": "descrição completa da exigência",
-      "obrigatorio": "Sim|Não|Condicional",
-      "item_edital": "ex: 12.1-a",
-      "observacoes": "observações importantes",
-      "status": "Pendente"
-    }
+    { "categoria": "", "documento": "", "descricao": "", "obrigatorio": "Sim|Não|Condicional", "item_edital": "", "observacoes": "", "status": "Pendente" }
   ],
   "checklist": [
-    {
-      "documento": "nome do documento ou ação",
-      "exigido": "Sim|Não",
-      "item_edital": "referência",
-      "possuimos": "",
-      "valido": "",
-      "precisa_atualizacao": "",
-      "responsavel": "",
-      "observacao": "orientação importante",
-      "status_final": "Pendente"
-    }
+    { "documento": "", "exigido": "Sim|Não", "item_edital": "", "possuimos": "", "valido": "", "precisa_atualizacao": "", "responsavel": "", "observacao": "", "status_final": "Pendente" }
   ],
   "requisitos_tecnicos": [
-    {
-      "categoria": "categoria do requisito",
-      "descricao": "descrição completa",
-      "origem": "item do edital ou TR",
-      "observacao": "observação"
-    }
+    { "categoria": "", "descricao": "", "origem": "", "observacao": "" }
   ],
   "itens_lotes": [
-    {
-      "lote": "1",
-      "item": "1",
-      "unidade": "unidade",
-      "especificacao": "descrição",
-      "quantidade": "quantidade",
-      "valor_unitario_referencial": "R$ 0,00",
-      "valor_total_estimado": "R$ 0,00"
-    }
+    { "lote": "1", "item": "1", "unidade": "", "especificacao": "", "quantidade": "", "valor_unitario_referencial": "", "valor_total_estimado": "" }
   ],
   "formacao_precos": [
-    {
-      "componente": "nome do componente de custo",
-      "lote1": "",
-      "lote2": "",
-      "orientacao": "orientação para cálculo"
-    }
+    { "componente": "", "lote1": "", "lote2": "", "orientacao": "" }
   ],
   "cronograma": [
-    {
-      "evento": "nome do evento",
-      "data_prazo": "data ou prazo",
-      "referencia": "item do edital",
-      "observacao": "observação",
-      "critico": true
-    }
+    { "evento": "", "data_prazo": "", "referencia": "", "observacao": "", "critico": true }
   ],
   "irregularidades": [
-    {
-      "problema": "descrição do problema",
-      "fundamentacao": "base legal ou técnica",
-      "item_edital": "item(ns) afetado(s)",
-      "grau_risco": "ALTO|MÉDIO|BAIXO",
-      "prioridade": "IMPUGNAÇÃO URGENTE|ESCLARECIMENTO|ATENÇÃO OPERACIONAL|SEM AÇÃO",
-      "sugestao_acao": "o que fazer"
-    }
+    { "problema": "", "fundamentacao": "", "item_edital": "", "grau_risco": "ALTO|MÉDIO|BAIXO", "prioridade": "", "sugestao_acao": "" }
   ],
   "resumo_executivo": {
     "recomendado": true,
-    "justificativa_recomendacao": "justificativa objetiva",
-    "principais_riscos": ["risco 1", "risco 2"],
-    "principais_oportunidades": ["oportunidade 1", "oportunidade 2"],
-    "documentos_criticos": ["documento 1", "documento 2"],
-    "exigencias_tecnicas_relevantes": ["exigência 1", "exigência 2"],
+    "justificativa_recomendacao": "",
+    "principais_riscos": [""],
+    "principais_oportunidades": [""],
+    "documentos_criticos": [""],
     "probabilidade_sucesso": "ALTA|MÉDIA-ALTA|MÉDIA|BAIXA",
-    "necessidade_esclarecimentos": ["ponto 1", "ponto 2"],
-    "necessidade_impugnacao": "Sim, pois... | Não há fundamentos para impugnação",
-    "checklist_resumido": [
-      { "acao": "ação prioritária", "prazo": "prazo" }
-    ]
+    "necessidade_esclarecimentos": [""],
+    "necessidade_impugnacao": "",
+    "checklist_resumido": [{ "acao": "", "prazo": "" }]
   }
 }
 
-INSTRUÇÕES CRÍTICAS:
-1. Retorne APENAS o JSON, sem nenhum texto antes ou depois
-2. Não use markdown (sem \`\`\`json)
-3. Seja completo - não omita nenhum documento exigido
-4. Identifique divergências entre edital e anexos
-5. Grau de risco: ALTO = impede participação/execução, MÉDIO = risco relevante, BAIXO = observação
-6. Para o checklist, inclua TODOS os documentos da habilitação mais ações operacionais
-7. Para cronograma, marque critico:true para prazos que geram preclusão ou inabilitação`
+REGRAS: Retorne APENAS o JSON. Sem texto antes ou depois. Sem markdown.`
 }
