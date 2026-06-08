@@ -6,11 +6,13 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-export const maxDuration = 55 // Vercel Hobby: máximo 60s
+export const maxDuration = 55
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
-  if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  if (!session) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  }
 
   let editalId: string | null = null
 
@@ -20,31 +22,39 @@ export async function POST(req: NextRequest) {
     let textoEdital: string = body.texto_edital || ''
 
     if (!editalId || !textoEdital) {
-      return NextResponse.json({ error: 'edital_id e texto_edital são obrigatórios' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'edital_id e texto_edital são obrigatórios' },
+        { status: 400 }
+      )
     }
 
-    // Limitar texto — 40k chars é suficiente para análise completa e evita timeout
-    const MAX_CHARS = 40000
+    // 20k chars de input → ~5k tokens → sobram ~7k tokens para o JSON de saída
+    const MAX_CHARS = 20000
     if (textoEdital.length > MAX_CHARS) {
       textoEdital = textoEdital.slice(0, MAX_CHARS) +
-        '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 40.000 caracteres]'
+        '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 20.000 caracteres]'
     }
 
-    // Marcar como "analisando"
-    await supabaseAdmin.from('editais').update({ status: 'analisando' }).eq('id', editalId)
+    // Marcar como analisando
+    await supabaseAdmin
+      .from('editais')
+      .update({ status: 'analisando' })
+      .eq('id', editalId)
 
     const prompt = buildAnalysisPrompt(textoEdital)
 
-    // claude-haiku: ~10x mais rápido que sonnet, cabe no limite de 60s do Hobby
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4000,
+      max_tokens: 8192, // máximo do Haiku — JSON completo sem truncar
       messages: [{ role: 'user', content: prompt }],
     })
 
     const rawContent = message.content[0]
-    if (rawContent.type !== 'text') throw new Error('Resposta inesperada do Claude')
+    if (rawContent.type !== 'text') {
+      throw new Error('Resposta inesperada do Claude')
+    }
 
+    // Limpar e fazer parse do JSON
     let analise
     try {
       const cleanText = rawContent.text
@@ -52,11 +62,25 @@ export async function POST(req: NextRequest) {
         .replace(/^```\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim()
+
+      // Verificar se o JSON foi truncado (não fecha com })
+      if (!cleanText.endsWith('}')) {
+        console.error('[ANALYZE] JSON truncado. stop_reason:', message.stop_reason)
+        console.error('[ANALYZE] Últimos 200 chars:', cleanText.slice(-200))
+        throw new Error('Resposta da IA incompleta (JSON truncado). Tente novamente com um edital menor.')
+      }
+
       analise = JSON.parse(cleanText)
     } catch (parseErr) {
       console.error('[ANALYZE] JSON parse error:', parseErr)
-      console.error('[ANALYZE] Raw (500 chars):', rawContent.text.slice(0, 500))
-      throw new Error('Erro ao processar resposta da IA. Tente novamente.')
+      console.error('[ANALYZE] stop_reason:', message.stop_reason)
+      console.error('[ANALYZE] Raw (primeiros 300):', rawContent.text.slice(0, 300))
+      console.error('[ANALYZE] Raw (últimos 300):', rawContent.text.slice(-300))
+      throw new Error(
+        parseErr instanceof Error && parseErr.message.includes('truncado')
+          ? parseErr.message
+          : 'Erro ao processar resposta da IA. Tente novamente.'
+      )
     }
 
     const dadosGerais = analise.dados_gerais || {}
