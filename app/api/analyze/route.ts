@@ -28,14 +28,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 20k chars de input → ~5k tokens → sobram ~7k tokens para o JSON de saída
+    // 10k chars → ~2.500 tokens input, deixa espaço para output
     const MAX_CHARS = 10000
     if (textoEdital.length > MAX_CHARS) {
       textoEdital = textoEdital.slice(0, MAX_CHARS) +
-        '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 20.000 caracteres]'
+        '\n[TRUNCADO — primeiros 10.000 caracteres]'
     }
 
-    // Marcar como analisando
     await supabaseAdmin
       .from('editais')
       .update({ status: 'analisando' })
@@ -43,9 +42,11 @@ export async function POST(req: NextRequest) {
 
     const prompt = buildAnalysisPrompt(textoEdital)
 
+    // max_tokens: 3500 — JSON completo com estrutura compacta cabe em ~3000 tokens
+    // O Haiku gera ~100 tokens/s → 3500 tokens = ~35s, bem abaixo do limite de 55s
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 8192, // máximo do Haiku — JSON completo sem truncar
+      max_tokens: 3500,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -54,33 +55,37 @@ export async function POST(req: NextRequest) {
       throw new Error('Resposta inesperada do Claude')
     }
 
-    // Limpar e fazer parse do JSON
     let analise
     try {
-      const cleanText = rawContent.text
+      let cleanText = rawContent.text
         .replace(/^```json\s*/i, '')
         .replace(/^```\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim()
 
-      // Verificar se o JSON foi truncado (não fecha com })
+      // Tentar fechar JSON truncado automaticamente
       if (!cleanText.endsWith('}')) {
-        console.error('[ANALYZE] JSON truncado. stop_reason:', message.stop_reason)
-        console.error('[ANALYZE] Últimos 200 chars:', cleanText.slice(-200))
-        throw new Error('Resposta da IA incompleta (JSON truncado). Tente novamente com um edital menor.')
+        // Contar chaves abertas e fechar
+        let open = 0
+        for (const c of cleanText) {
+          if (c === '{') open++
+          else if (c === '}') open--
+        }
+        // Remover trailing vírgulas e fechar
+        cleanText = cleanText.replace(/,\s*$/, '')
+        while (open > 0) {
+          cleanText += '}'
+          open--
+        }
       }
 
       analise = JSON.parse(cleanText)
     } catch (parseErr) {
       console.error('[ANALYZE] JSON parse error:', parseErr)
       console.error('[ANALYZE] stop_reason:', message.stop_reason)
-      console.error('[ANALYZE] Raw (primeiros 300):', rawContent.text.slice(0, 300))
-      console.error('[ANALYZE] Raw (últimos 300):', rawContent.text.slice(-300))
-      throw new Error(
-        parseErr instanceof Error && parseErr.message.includes('truncado')
-          ? parseErr.message
-          : 'Erro ao processar resposta da IA. Tente novamente.'
-      )
+      console.error('[ANALYZE] usage:', JSON.stringify(message.usage))
+      console.error('[ANALYZE] Raw últimos 200:', rawContent.text.slice(-200))
+      throw new Error('Erro ao processar resposta da IA. Tente novamente.')
     }
 
     const dadosGerais = analise.dados_gerais || {}
