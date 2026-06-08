@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     const body = await req.json()
     // Permite atualizar: notas, analise_raw (para salvar preenchimentos do checklist)
-    const allowed = ['notas', 'analise_raw', 'numero_pregao', 'numero_processo', 'orgao', 'objeto', 'valor_estimado', 'data_sessao']
+    const allowed = ['notas', 'analise_raw', 'status', 'numero_pregao', 'numero_processo', 'orgao', 'objeto', 'valor_estimado', 'data_sessao']
     const updates: Record<string, unknown> = {}
     for (const key of allowed) {
       if (key in body) updates[key] = body[key]
