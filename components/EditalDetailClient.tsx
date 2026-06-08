@@ -48,13 +48,35 @@ export default function EditalDetailClient({ id }: { id: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ edital_id: id, texto_edital: edital.arquivo_texto }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
+      // Usar text() primeiro para evitar "Unexpected end of JSON input" em respostas vazias
+      const text = await res.text()
+      if (!text || text.trim() === '') {
+        throw new Error('Servidor não retornou resposta. Verifique os logs do Vercel.')
+      }
+      let json: { success?: boolean; error?: string; data?: unknown }
+      try {
+        json = JSON.parse(text)
+      } catch {
+        console.error('Resposta não-JSON:', text.slice(0, 200))
+        throw new Error('Resposta inválida do servidor. Tente novamente.')
+      }
+      if (!res.ok) throw new Error(json.error || 'Erro na análise')
       await fetchEdital()
       setActiveTab('resumo')
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro na análise')
     } finally { setAnalyzing(false) }
+  }
+
+  async function handleResetStatus() {
+    try {
+      await fetch(`/api/editais/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'pendente' }),
+      })
+      await fetchEdital()
+    } catch { /* ignore */ }
   }
 
   async function handleSaveNotas() {
@@ -129,7 +151,7 @@ export default function EditalDetailClient({ id }: { id: string }) {
               )}
             </div>
           </div>
-          {edital.arquivo_texto && edital.status !== 'concluido' && edital.status !== 'analisando' && (
+          {edital.arquivo_texto && edital.status !== 'concluido' && edital.status !== 'analisando' && edital.status !== 'erro' && (
             <button onClick={handleAnalyze} disabled={analyzing} className="btn-primary text-sm py-2 px-4 flex items-center gap-2">
               {analyzing || edital.status === 'analisando' ? (
                 <><span className="spinner w-4 h-4 inline-block" /> Analisando…</>
@@ -153,12 +175,35 @@ export default function EditalDetailClient({ id }: { id: string }) {
 
       {/* Status analisando */}
       {edital.status === 'analisando' && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 flex items-center gap-3">
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 flex items-center gap-3 flex-wrap">
           <div className="spinner w-5 h-5 flex-shrink-0" />
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-semibold text-blue-800">Análise em andamento…</p>
             <p className="text-xs text-blue-600">O Claude está processando o edital. Isso pode levar até 60 segundos. Esta página atualiza automaticamente.</p>
           </div>
+          <button
+            onClick={handleResetStatus}
+            className="text-xs text-blue-700 border border-blue-300 rounded px-3 py-1 hover:bg-blue-100"
+          >
+            Cancelar / Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {/* Status erro */}
+      {edital.status === 'erro' && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-3 flex items-center gap-3 flex-wrap">
+          <span className="text-red-500 text-lg flex-shrink-0">⚠️</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-red-800">Erro na análise</p>
+            <p className="text-xs text-red-600">Ocorreu um erro ao processar o edital. Clique em "Tentar novamente" para reiniciar.</p>
+          </div>
+          <button
+            onClick={handleResetStatus}
+            className="text-xs text-white bg-red-600 rounded px-3 py-1 hover:bg-red-700"
+          >
+            Tentar novamente
+          </button>
         </div>
       )}
 
