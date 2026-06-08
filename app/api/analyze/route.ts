@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 20k chars de input → ~5k tokens → sobram ~7k tokens para o JSON de saída
-    const MAX_CHARS = 20000
+    const MAX_CHARS = 10000
     if (textoEdital.length > MAX_CHARS) {
       textoEdital = textoEdital.slice(0, MAX_CHARS) +
         '\n\n[TEXTO TRUNCADO — análise baseada nos primeiros 20.000 caracteres]'
