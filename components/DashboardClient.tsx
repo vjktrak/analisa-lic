@@ -274,14 +274,26 @@ function NewEditalModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
     setStep('saving')
     try {
+      // Passo 1: criar edital sem o texto (evita Request Entity Too Large)
       const res = await fetch('/api/editais', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, arquivo_nome: file?.name || null, arquivo_texto: textoExtraido ? textoExtraido.slice(0, 50000) : null }),
+        body: JSON.stringify({ ...form, arquivo_nome: file?.name || null }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Erro ao criar')
-      onCreated(json.data.id)
+      const editalId = json.data.id
+
+      // Passo 2: salvar o texto em PATCH separado (chunks menores)
+      if (textoExtraido) {
+        await fetch(`/api/editais/${editalId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ arquivo_texto: textoExtraido }),
+        })
+      }
+
+      onCreated(editalId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar')
       setStep('form')
