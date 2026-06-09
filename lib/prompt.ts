@@ -1,5 +1,5 @@
 export function buildAnalysisPrompt(editalText: string): string {
-  const texto = editalText.slice(0, 8000)
+  const texto = editalText.slice(0, 3000)
   return `Analise este edital de licitação pública brasileira. Retorne APENAS JSON válido sem markdown.
 
 EDITAL:
