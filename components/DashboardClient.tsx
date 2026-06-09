@@ -258,12 +258,32 @@ function NewEditalModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (file && !textoExtraido) {
       setStep('uploading')
       try {
-        const fd = new FormData()
-        fd.append('file', file)
-        const extRes = await fetch('/api/extract-text', { method: 'POST', body: fd })
-        const extJson = await extRes.json()
-        if (!extRes.ok) throw new Error(extJson.error || 'Erro ao extrair texto')
-        textoExtraido = extJson.text || ''
+        // Ler arquivo como base64 no browser — evita limite de tamanho do FormData
+        const base64: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => {
+            const r = reader.result as string
+            resolve(r.split(',')[1])
+          }
+          reader.onerror = () => reject(new Error('Erro ao ler arquivo'))
+          reader.readAsDataURL(file)
+        })
+        const extRes = await fetch('/api/extract-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64, filename: file.name, fileType: file.type }),
+        })
+        const extRaw = await extRes.text()
+        if (!extRes.ok) {
+          let extErr = extRaw
+          try { extErr = JSON.parse(extRaw).error || extRaw } catch {}
+          throw new Error(extErr || 'Erro ao extrair texto')
+        }
+        try {
+          textoExtraido = JSON.parse(extRaw).text || ''
+        } catch {
+          throw new Error('Erro ao processar resposta da extração.')
+        }
         setFileText(textoExtraido)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Erro ao processar arquivo')
