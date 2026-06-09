@@ -8,17 +8,19 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
   try {
-    const formData = await req.formData()
-    const file = formData.get('file') as File | null
+    const body = await req.json()
+    const { base64, filename, fileType } = body
 
-    if (!file) return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 })
+    if (!base64) {
+      return NextResponse.json({ error: 'Dados do arquivo não enviados' }, { status: 400 })
+    }
 
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-
+    const buffer = Buffer.from(base64, 'base64')
     let text = ''
 
-    if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
+    const isPDF = (filename?.toLowerCase().endsWith('.pdf')) || fileType === 'application/pdf'
+
+    if (isPDF) {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const pdfParse = require('pdf-parse')
       const result = await pdfParse(buffer)
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
       text = new TextDecoder('utf-8').decode(buffer)
     }
 
-    // Limpar espaços e limitar
+    // Limpar espaços
     text = text
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
