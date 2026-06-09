@@ -29,11 +29,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// Aumentar limite do body parser para 10MB
-export const config = {
-  api: { bodyParser: { sizeLimit: '10mb' } }
-}
-
 // POST /api/editais - criar novo edital
 export async function POST(req: NextRequest) {
   const session = await getSession()
