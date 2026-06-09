@@ -43,29 +43,100 @@ export default function EditalDetailClient({ id }: { id: string }) {
     }
     setAnalyzing(true)
     try {
-      const res = await fetch('/api/analyze', {
+      // Marcar como analisando via API local (rápido, sem timeout)
+      await fetch(`/api/editais/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'analisando' }),
+      })
+      await fetchEdital()
+
+      // Chamar Anthropic API diretamente do browser (sem limite de 60s do Vercel)
+      const apiKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY
+      if (!apiKey) throw new Error('Chave da API não configurada')
+
+      const texto = edital.arquivo_texto.slice(0, 10000)
+      const prompt = buildPrompt(texto)
+
+      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 3500,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      })
+
+      const anthropicJson = await anthropicRes.json()
+      if (!anthropicRes.ok) {
+        throw new Error(anthropicJson.error?.message || 'Erro na API da Anthropic')
+      }
+
+      const rawText = anthropicJson.content?.[0]?.text || ''
+      let analise
+      try {
+        let clean = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
+        if (!clean.endsWith('}')) {
+          let open = 0
+          for (const c of clean) { if (c === '{') open++; else if (c === '}') open-- }
+          clean = clean.replace(/,\s*$/, '')
+          while (open > 0) { clean += '}'; open-- }
+        }
+        analise = JSON.parse(clean)
+      } catch {
+        throw new Error('Erro ao processar resposta da IA. Tente novamente.')
+      }
+
+      // Salvar resultado via API local
+      const saveRes = await fetch('/api/analyze/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ edital_id: id, texto_edital: edital.arquivo_texto }),
+        body: JSON.stringify({ edital_id: id, analise }),
       })
-      // Usar text() primeiro para evitar "Unexpected end of JSON input" em respostas vazias
-      const text = await res.text()
-      if (!text || text.trim() === '') {
-        throw new Error('Servidor não retornou resposta. Verifique os logs do Vercel.')
-      }
-      let json: { success?: boolean; error?: string; data?: unknown }
-      try {
-        json = JSON.parse(text)
-      } catch {
-        console.error('Resposta não-JSON:', text.slice(0, 200))
-        throw new Error('Resposta inválida do servidor. Tente novamente.')
-      }
-      if (!res.ok) throw new Error(json.error || 'Erro na análise')
+      const saveText = await saveRes.text()
+      if (!saveRes.ok) throw new Error('Erro ao salvar análise')
+
       await fetchEdital()
       setActiveTab('resumo')
     } catch (err) {
+      // Marcar como erro
+      await fetch(`/api/editais/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'erro' }),
+      }).catch(() => {})
       alert(err instanceof Error ? err.message : 'Erro na análise')
     } finally { setAnalyzing(false) }
+  }
+
+  function buildPrompt(texto: string): string {
+    return `Você é especialista em licitações públicas brasileiras (Lei 14.133/2021).
+
+Analise o edital e retorne SOMENTE JSON válido, sem markdown.
+
+EDITAL:
+===
+${texto}
+===
+
+Retorne EXATAMENTE este JSON (sem texto antes/depois, sem markdown):
+{
+  "dados_gerais": {"numero_processo":"","numero_pregao":"","orgao_licitante":"","modalidade":"","objeto":"","valor_estimado_global":"","data_sessao":"","prazo_envio_propostas":"","plataforma":"","criterio_julgamento":"","modo_disputa":"","prazo_contratual":"","pagamento":"","garantia_contratual":"","beneficios_me_epp":"","visita_tecnica":""},
+  "habilitacao": [{"categoria":"","documento":"","descricao":"","obrigatorio":"Sim","item_edital":"","observacoes":"","status":"Pendente"}],
+  "checklist": [{"documento":"","exigido":"Sim","item_edital":"","possuimos":"","valido":"","precisa_atualizacao":"","responsavel":"","observacao":"","status_final":"Pendente"}],
+  "requisitos_tecnicos": [{"categoria":"","descricao":"","origem":"","observacao":""}],
+  "itens_lotes": [{"lote":"1","item":"1","unidade":"","especificacao":"","quantidade":"","valor_unitario_referencial":"","valor_total_estimado":""}],
+  "formacao_precos": [{"componente":"","lote1":"","lote2":"","orientacao":""}],
+  "cronograma": [{"evento":"","data_prazo":"","referencia":"","observacao":"","critico":true}],
+  "irregularidades": [{"problema":"","fundamentacao":"","item_edital":"","grau_risco":"MÉDIO","prioridade":"","sugestao_acao":""}],
+  "resumo_executivo": {"recomendado":true,"justificativa_recomendacao":"","principais_riscos":[""],"principais_oportunidades":[""],"documentos_criticos":[""],"probabilidade_sucesso":"MÉDIA","necessidade_esclarecimentos":[""],"necessidade_impugnacao":"","checklist_resumido":[{"acao":"","prazo":""}]}
+}`
   }
 
   async function handleResetStatus() {
