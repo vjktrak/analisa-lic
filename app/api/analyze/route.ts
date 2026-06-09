@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const MAX_CHARS = 3000
+    const MAX_CHARS = 5000
     if (textoEdital.length > MAX_CHARS) {
       textoEdital = textoEdital.slice(0, MAX_CHARS) + '\n[TRUNCADO]'
     }
