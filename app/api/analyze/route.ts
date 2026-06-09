@@ -28,11 +28,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 10k chars → ~2.500 tokens input, deixa espaço para output
     const MAX_CHARS = 10000
     if (textoEdital.length > MAX_CHARS) {
-      textoEdital = textoEdital.slice(0, MAX_CHARS) +
-        '\n[TRUNCADO — primeiros 10.000 caracteres]'
+      textoEdital = textoEdital.slice(0, MAX_CHARS) + '\n[TRUNCADO]'
     }
 
     await supabaseAdmin
@@ -42,49 +40,47 @@ export async function POST(req: NextRequest) {
 
     const prompt = buildAnalysisPrompt(textoEdital)
 
-    // max_tokens: 3500 — JSON completo com estrutura compacta cabe em ~3000 tokens
-    // O Haiku gera ~100 tokens/s → 3500 tokens = ~35s, bem abaixo do limite de 55s
-    const message = await anthropic.messages.create({
+    // Usar streaming para evitar timeout — o Vercel não corta streams
+    const stream = await anthropic.messages.stream({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 3500,
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const rawContent = message.content[0]
-    if (rawContent.type !== 'text') {
-      throw new Error('Resposta inesperada do Claude')
+    // Coletar texto completo do stream
+    let fullText = ''
+    for await (const chunk of stream) {
+      if (
+        chunk.type === 'content_block_delta' &&
+        chunk.delta.type === 'text_delta'
+      ) {
+        fullText += chunk.delta.text
+      }
     }
 
+    // Parse do JSON
     let analise
     try {
-      let cleanText = rawContent.text
+      let clean = fullText
         .replace(/^```json\s*/i, '')
         .replace(/^```\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim()
 
-      // Tentar fechar JSON truncado automaticamente
-      if (!cleanText.endsWith('}')) {
-        // Contar chaves abertas e fechar
+      if (!clean.endsWith('}')) {
         let open = 0
-        for (const c of cleanText) {
+        for (const c of clean) {
           if (c === '{') open++
           else if (c === '}') open--
         }
-        // Remover trailing vírgulas e fechar
-        cleanText = cleanText.replace(/,\s*$/, '')
-        while (open > 0) {
-          cleanText += '}'
-          open--
-        }
+        clean = clean.replace(/,\s*$/, '')
+        while (open > 0) { clean += '}'; open-- }
       }
 
-      analise = JSON.parse(cleanText)
+      analise = JSON.parse(clean)
     } catch (parseErr) {
-      console.error('[ANALYZE] JSON parse error:', parseErr)
-      console.error('[ANALYZE] stop_reason:', message.stop_reason)
-      console.error('[ANALYZE] usage:', JSON.stringify(message.usage))
-      console.error('[ANALYZE] Raw últimos 200:', rawContent.text.slice(-200))
+      console.error('[ANALYZE] Parse error:', parseErr)
+      console.error('[ANALYZE] Raw (last 200):', fullText.slice(-200))
       throw new Error('Erro ao processar resposta da IA. Tente novamente.')
     }
 
@@ -118,7 +114,7 @@ export async function POST(req: NextRequest) {
         .eq('id', editalId)
         .catch(() => {})
     }
-    const message = err instanceof Error ? err.message : 'Erro interno na análise'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const msg = err instanceof Error ? err.message : 'Erro interno'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
