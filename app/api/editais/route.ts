@@ -29,6 +29,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Aumentar limite do body parser para 10MB
+export const config = {
+  api: { bodyParser: { sizeLimit: '10mb' } }
+}
+
 // POST /api/editais - criar novo edital
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -36,7 +41,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { numero_pregao, numero_processo, orgao, objeto, valor_estimado, data_sessao, arquivo_nome, arquivo_texto } = body
+    const { numero_pregao, numero_processo, orgao, objeto, valor_estimado, data_sessao, arquivo_nome } = body
+    // Limitar arquivo_texto a 50.000 chars para não exceder limites do banco/request
+    const arquivo_texto = body.arquivo_texto ? String(body.arquivo_texto).slice(0, 50000) : null
 
     if (!numero_pregao || !orgao || !objeto) {
       return NextResponse.json({ error: 'Campos obrigatórios: numero_pregao, orgao, objeto' }, { status: 400 })
